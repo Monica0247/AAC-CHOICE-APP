@@ -1,9 +1,10 @@
-import type { Types } from "mongoose";
+import { Types } from "mongoose";
 import { connectToDatabase } from "@/lib/db";
 import { Profile } from "@/models/Profile";
 import { Group } from "@/models/Group";
 import { Card } from "@/models/Card";
 import { User } from "@/models/User";
+import { ChoiceLog } from "@/models/ChoiceLog";
 import type { Session } from "next-auth";
 
 export async function getProfilesForTherapist(therapistId: string) {
@@ -59,4 +60,34 @@ export async function getAccessibleGroup(groupId: string, user: Session["user"])
   if (!profile) return null;
 
   return { group, profile };
+}
+
+export async function getChoiceHistoryForProfile(profileId: string, { limit = 50 }: { limit?: number } = {}) {
+  await connectToDatabase();
+  return ChoiceLog.find({ profileId })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .populate("chosenCardId", "label imageUrl")
+    .populate("optionCardIds", "label")
+    .lean();
+}
+
+export async function getChoiceCountsForProfile(profileId: string) {
+  await connectToDatabase();
+  const counts = await ChoiceLog.aggregate([
+    { $match: { profileId: new Types.ObjectId(profileId) } },
+    { $group: { _id: "$chosenCardId", count: { $sum: 1 } } },
+    { $sort: { count: -1 } },
+  ]);
+
+  const cards = await Card.find({ _id: { $in: counts.map((c) => c._id) } })
+    .select("label")
+    .lean();
+  const labelById = new Map(cards.map((card) => [card._id.toString(), card.label]));
+
+  return counts.map((c) => ({
+    cardId: c._id.toString(),
+    label: labelById.get(c._id.toString()) ?? "(card removed)",
+    count: c.count as number,
+  }));
 }

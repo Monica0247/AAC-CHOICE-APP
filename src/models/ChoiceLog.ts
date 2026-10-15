@@ -10,6 +10,9 @@ const ChoiceLogSchema = new Schema(
   { timestamps: true }
 );
 
+// Supports the choice-history page's per-profile, most-recent-first query.
+ChoiceLogSchema.index({ profileId: 1, createdAt: -1 });
+
 export type ChoiceLogDoc = InferSchemaType<typeof ChoiceLogSchema>;
 
 export const ChoiceLog = models.ChoiceLog ?? model("ChoiceLog", ChoiceLogSchema);

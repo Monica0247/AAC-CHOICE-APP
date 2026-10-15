@@ -7,6 +7,13 @@ export type CardData = {
 
 export function pickPair(cards: CardData[]): CardData[] {
   if (cards.length <= 2) return cards;
-  const shuffled = [...cards].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, 2);
+
+  // Partial Fisher-Yates: only need the first two slots to be uniformly
+  // random, not the whole array shuffled.
+  const pool = [...cards];
+  for (let i = 0; i < 2; i++) {
+    const j = i + Math.floor(Math.random() * (pool.length - i));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, 2);
 }

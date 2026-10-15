@@ -46,7 +46,15 @@ export default async function ProfilePage({ params }: PageProps<"/dashboard/prof
         </div>
 
         <section>
-          <h2 className="text-lg font-semibold text-slate-900">Groups</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-900">Groups</h2>
+            <Link
+              href={`/dashboard/profiles/${id}/history`}
+              className="text-sm text-indigo-600 hover:underline"
+            >
+              View choice history →
+            </Link>
+          </div>
           <p className="mt-1 text-sm text-slate-500">
             A group holds the photo cards {profile.name} chooses between, e.g. &ldquo;breakfast&rdquo;.
           </p>
