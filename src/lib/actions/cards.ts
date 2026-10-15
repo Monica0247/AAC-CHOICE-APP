@@ -6,7 +6,7 @@ import { connectToDatabase } from "@/lib/db";
 import { Profile } from "@/models/Profile";
 import { Group } from "@/models/Group";
 import { Card } from "@/models/Card";
-import { uploadToCloudinary } from "@/lib/cloudinary";
+import { deleteCardMedia, uploadToCloudinary } from "@/lib/cloudinary";
 
 export type CardActionState = { error?: string; success?: boolean } | undefined;
 
@@ -45,10 +45,10 @@ export async function createCard(_prevState: CardActionState, formData: FormData
     return { error: "Not authorized." };
   }
 
-  let imageUrl: string;
-  let audioUrl: string;
+  let image: { url: string; publicId: string };
+  let audio: { url: string; publicId: string };
   try {
-    [imageUrl, audioUrl] = await Promise.all([
+    [image, audio] = await Promise.all([
       uploadToCloudinary(imageFile, "image"),
       uploadToCloudinary(audioFile, "audio"),
     ]);
@@ -57,7 +57,14 @@ export async function createCard(_prevState: CardActionState, formData: FormData
     return { error: "Upload failed. Check your internet connection and the Cloudinary settings in .env.local." };
   }
 
-  await Card.create({ groupId, label, imageUrl, audioUrl });
+  await Card.create({
+    groupId,
+    label,
+    imageUrl: image.url,
+    audioUrl: audio.url,
+    imagePublicId: image.publicId,
+    audioPublicId: audio.publicId,
+  });
   revalidatePath(`/dashboard/profiles/${profileId}/groups/${groupId}`);
   return { success: true };
 }
@@ -68,6 +75,7 @@ export async function deleteCard(formData: FormData) {
   if (!cardId || !groupId) throw new Error("Missing fields");
 
   const { profile } = await requireOwnedGroup(groupId);
-  await Card.deleteOne({ _id: cardId, groupId });
+  const card = await Card.findOneAndDelete({ _id: cardId, groupId }).lean();
+  if (card) await deleteCardMedia(card);
   revalidatePath(`/dashboard/profiles/${profile._id}/groups/${groupId}`);
 }

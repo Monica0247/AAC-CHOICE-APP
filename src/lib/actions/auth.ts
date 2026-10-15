@@ -65,6 +65,7 @@ export async function setParentPassword(_prevState: FormState, formData: FormDat
 
   user.passwordHash = await bcrypt.hash(password, 10);
   user.inviteToken = null;
+  user.inviteTokenExpiresAt = null;
   await user.save();
 
   redirect("/login?activated=1");

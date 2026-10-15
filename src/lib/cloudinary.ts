@@ -18,5 +18,32 @@ export async function uploadToCloudinary(file: File, kind: "image" | "audio") {
     resource_type: kind === "audio" ? "video" : "image",
   });
 
-  return result.secure_url;
+  return { url: result.secure_url, publicId: result.public_id };
+}
+
+export async function deleteFromCloudinary(publicId: string, kind: "image" | "audio") {
+  await cloudinary.uploader.destroy(publicId, {
+    resource_type: kind === "audio" ? "video" : "image",
+  });
+}
+
+// Best-effort: never blocks a card/group/profile delete on Cloudinary's
+// availability. Cards uploaded before imagePublicId/audioPublicId existed
+// are silently skipped rather than backfilled.
+export async function deleteCardMedia(card: {
+  imagePublicId?: string | null;
+  audioPublicId?: string | null;
+}) {
+  await Promise.all([
+    card.imagePublicId
+      ? deleteFromCloudinary(card.imagePublicId, "image").catch((error) =>
+          console.error("Cloudinary cleanup failed (image)", error)
+        )
+      : null,
+    card.audioPublicId
+      ? deleteFromCloudinary(card.audioPublicId, "audio").catch((error) =>
+          console.error("Cloudinary cleanup failed (audio)", error)
+        )
+      : null,
+  ]);
 }

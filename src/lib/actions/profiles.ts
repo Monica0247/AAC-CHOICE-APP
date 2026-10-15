@@ -1,7 +1,7 @@
 "use server";
 
 import crypto from "crypto";
-import type { Types } from "mongoose";
+import mongoose, { type Types } from "mongoose";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
@@ -11,6 +11,7 @@ import { Group } from "@/models/Group";
 import { Card } from "@/models/Card";
 import { ChoiceLog } from "@/models/ChoiceLog";
 import { User } from "@/models/User";
+import { deleteCardMedia } from "@/lib/cloudinary";
 
 async function requireTherapist() {
   const session = await auth();
@@ -39,12 +40,23 @@ export async function deleteProfile(formData: FormData) {
   const profile = await Profile.findOne({ _id: profileId, therapistId: therapist.id });
   if (!profile) throw new Error("Not found");
 
-  const groups = await Group.find({ profileId: profile._id }).select("_id");
-  const groupIds = groups.map((g) => g._id);
-  await Card.deleteMany({ groupId: { $in: groupIds } });
-  await ChoiceLog.deleteMany({ profileId: profile._id });
-  await Group.deleteMany({ profileId: profile._id });
-  await profile.deleteOne();
+  const session = await mongoose.startSession();
+  let cards: Array<{ imagePublicId?: string | null; audioPublicId?: string | null }> = [];
+  try {
+    await session.withTransaction(async () => {
+      const groups = await Group.find({ profileId: profile._id }).session(session).select("_id");
+      const groupIds = groups.map((g) => g._id);
+      cards = await Card.find({ groupId: { $in: groupIds } }).session(session).lean();
+      await Card.deleteMany({ groupId: { $in: groupIds } }).session(session);
+      await ChoiceLog.deleteMany({ profileId: profile._id }).session(session);
+      await Group.deleteMany({ profileId: profile._id }).session(session);
+      await Profile.deleteOne({ _id: profile._id }).session(session);
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  await Promise.all(cards.map((card) => deleteCardMedia(card)));
 
   revalidatePath("/dashboard");
   redirect("/dashboard");
@@ -69,11 +81,13 @@ export async function inviteParent(_prevState: InviteState, formData: FormData):
   let parent = await User.findOne({ email });
   if (!parent) {
     const inviteToken = crypto.randomBytes(24).toString("hex");
+    const inviteTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     parent = await User.create({
       name,
       email,
       role: "parent",
       inviteToken,
+      inviteTokenExpiresAt,
       invitedBy: therapist.id,
     });
   } else if (parent.role !== "parent") {

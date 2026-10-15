@@ -6,6 +6,8 @@ const CardSchema = new Schema(
     label: { type: String, required: true, trim: true },
     imageUrl: { type: String, required: true },
     audioUrl: { type: String, required: true },
+    imagePublicId: { type: String, default: null },
+    audioPublicId: { type: String, default: null },
   },
   { timestamps: true }
 );

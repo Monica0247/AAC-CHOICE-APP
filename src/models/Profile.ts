@@ -5,7 +5,7 @@ const ProfileSchema = new Schema(
     name: { type: String, required: true, trim: true },
     avatarUrl: { type: String, default: null },
     therapistId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    parentIds: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    parentIds: [{ type: Schema.Types.ObjectId, ref: "User", index: true }],
   },
   { timestamps: true }
 );
