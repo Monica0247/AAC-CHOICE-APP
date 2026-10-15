@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { recordChoice } from "@/lib/actions/choice-log";
 import { pickPair, type CardData } from "@/lib/pick-pair";
+import { flushPendingChoices, queuePendingChoice } from "@/lib/offline-queue";
 
 export function PlayScreen({
   groupId,
@@ -20,7 +21,35 @@ export function PlayScreen({
 }) {
   const [pair, setPair] = useState(initialPair);
   const [chosenId, setChosenId] = useState<string | null>(null);
+  const [isPreloading, setIsPreloading] = useState(true);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Preload every card's media once while online, so the service worker's
+  // cache is warm before the child starts tapping and a dropped connection
+  // mid-session doesn't break already-loaded cards.
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(
+      cards.flatMap((card) => [
+        fetch(card.imageUrl, { cache: "force-cache" }).catch(() => {}),
+        fetch(card.audioUrl, { cache: "force-cache" }).catch(() => {}),
+      ])
+    ).finally(() => {
+      if (!cancelled) setIsPreloading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [cards]);
+
+  // Retry any choices that failed to record while offline, both on mount
+  // and whenever the browser regains connectivity.
+  useEffect(() => {
+    flushPendingChoices(recordChoice);
+    const handleOnline = () => flushPendingChoices(recordChoice);
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, []);
 
   function handleChoose(card: CardData) {
     if (chosenId) return;
@@ -31,16 +60,28 @@ export function PlayScreen({
       audioRef.current.play().catch(() => {});
     }
 
-    recordChoice({
+    const choice = {
       groupId,
       chosenCardId: card.id,
       optionCardIds: pair.map((c) => c.id),
-    }).catch(() => {});
+    };
+    recordChoice(choice).catch(() => {
+      queuePendingChoice({ ...choice, ts: Date.now() });
+    });
   }
 
   function handleTryAgain() {
     setChosenId(null);
     setPair(pickPair(cards));
+  }
+
+  if (isPreloading) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-900 text-slate-300">
+        <p className="text-lg font-medium">Preparing session…</p>
+        <p className="text-sm text-slate-500">Loading photos and sounds for {groupName}</p>
+      </div>
+    );
   }
 
   return (
