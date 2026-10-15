@@ -9,6 +9,19 @@ import { User } from "@/models/User";
 
 export type FormState = { error?: string } | undefined;
 
+// Next's redirect() throws a control-flow error carrying this digest prefix;
+// it must propagate, not be swallowed by the catch-all below. isRedirectError
+// isn't part of the public next/navigation API in this Next.js version.
+function isRedirectError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "digest" in error &&
+    typeof (error as { digest?: unknown }).digest === "string" &&
+    (error as { digest: string }).digest.startsWith("NEXT_REDIRECT")
+  );
+}
+
 export async function registerTherapist(_prevState: FormState, formData: FormData): Promise<FormState> {
   const name = formData.get("name")?.toString().trim();
   const email = formData.get("email")?.toString().trim().toLowerCase();
@@ -69,10 +82,14 @@ export async function loginAction(_prevState: FormState, formData: FormData): Pr
       redirectTo: callbackUrl && callbackUrl !== "/" ? callbackUrl : "/post-login",
     });
   } catch (error) {
+    if (isRedirectError(error)) {
+      throw error;
+    }
     if (error instanceof AuthError) {
       return { error: "Invalid email or password." };
     }
-    throw error;
+    console.error("loginAction failed", error);
+    return { error: "Something went wrong. Please try again in a moment." };
   }
 }
 
