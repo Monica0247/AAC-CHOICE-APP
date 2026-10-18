@@ -75,6 +75,14 @@ export function PlayScreen({
     setPair(pickPair(cards));
   }
 
+  function handleCardTap(card: CardData) {
+    if (chosenId) {
+      handleTryAgain();
+    } else {
+      handleChoose(card);
+    }
+  }
+
   if (isPreloading) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-900 text-slate-300">
@@ -108,8 +116,7 @@ export function PlayScreen({
             <button
               key={card.id}
               type="button"
-              onClick={() => handleChoose(card)}
-              disabled={chosenId !== null}
+              onClick={() => handleCardTap(card)}
               aria-label={card.label}
               className={`relative flex flex-1 flex-col items-center justify-center overflow-hidden rounded-3xl border-4 transition-all duration-300 ${
                 isChosen ? "border-green-400 scale-[1.02]" : "border-transparent"
@@ -129,18 +136,6 @@ export function PlayScreen({
           );
         })}
       </div>
-
-      {chosenId && (
-        <div className="flex justify-center p-4">
-          <button
-            type="button"
-            onClick={handleTryAgain}
-            className="rounded-2xl bg-indigo-600 px-8 py-4 text-xl font-bold text-white hover:bg-indigo-700"
-          >
-            🔄 Choose again
-          </button>
-        </div>
-      )}
     </div>
   );
 }
