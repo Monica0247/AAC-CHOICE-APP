@@ -62,7 +62,16 @@ export async function deleteProfile(formData: FormData) {
   redirect("/dashboard");
 }
 
-export type InviteState = { error?: string; inviteUrl?: string } | undefined;
+export type InviteState = { error?: string; inviteUrl?: string; message?: string } | undefined;
+
+const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function newInvite() {
+  return {
+    inviteToken: crypto.randomBytes(24).toString("hex"),
+    inviteTokenExpiresAt: new Date(Date.now() + INVITE_TTL_MS),
+  };
+}
 
 export async function inviteParent(_prevState: InviteState, formData: FormData): Promise<InviteState> {
   const therapist = await requireTherapist();
@@ -80,18 +89,20 @@ export async function inviteParent(_prevState: InviteState, formData: FormData):
 
   let parent = await User.findOne({ email });
   if (!parent) {
-    const inviteToken = crypto.randomBytes(24).toString("hex");
-    const inviteTokenExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     parent = await User.create({
       name,
       email,
       role: "parent",
-      inviteToken,
-      inviteTokenExpiresAt,
+      ...newInvite(),
       invitedBy: therapist.id,
     });
   } else if (parent.role !== "parent") {
     return { error: "That email belongs to a therapist account." };
+  } else if (!parent.passwordHash) {
+    // Invited before but never activated: issue a fresh link so a lost or
+    // stale one doesn't leave the therapist with nothing to share.
+    Object.assign(parent, newInvite());
+    await parent.save();
   }
 
   const alreadyLinked = profile.parentIds.some(
@@ -104,8 +115,13 @@ export async function inviteParent(_prevState: InviteState, formData: FormData):
 
   revalidatePath(`/dashboard/profiles/${profileId}`);
 
+  if (parent.inviteToken) {
+    return { inviteUrl: `/invite/${parent.inviteToken}` };
+  }
   return {
-    inviteUrl: parent.inviteToken ? `/invite/${parent.inviteToken}` : undefined,
+    message: alreadyLinked
+      ? `${parent.name} already has access to this profile.`
+      : `${parent.name} already has an account and now has access to this profile. They can sign in with their existing password.`,
   };
 }
 

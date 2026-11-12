@@ -37,6 +37,12 @@ export function InviteParentForm({ profileId }: { profileId: string }) {
         </p>
       )}
 
+      {state?.message && (
+        <p role="status" className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+          {state.message}
+        </p>
+      )}
+
       {state?.inviteUrl && (
         <div className="mt-3 rounded-lg bg-indigo-50 px-3 py-3 text-sm text-indigo-900">
           <p className="font-medium">Share this link with them to set up their account:</p>
