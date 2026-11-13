@@ -7,18 +7,41 @@ cloudinary.config({
   secure: true,
 });
 
-export async function uploadToCloudinary(file: File, kind: "image" | "audio") {
-  const arrayBuffer = await file.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-  const base64 = `data:${file.type};base64,${buffer.toString("base64")}`;
+const UPLOAD_FOLDER = "aac-choice-app";
 
-  const result = await cloudinary.uploader.upload(base64, {
-    folder: "aac-choice-app",
-    // Cloudinary serves audio through its video pipeline.
-    resource_type: kind === "audio" ? "video" : "image",
-  });
+export type UploadSignature = {
+  cloudName: string;
+  apiKey: string;
+  timestamp: number;
+  folder: string;
+  signature: string;
+};
 
-  return { url: result.secure_url, publicId: result.public_id };
+// Files are uploaded by the browser straight to Cloudinary, because Vercel
+// rejects function request bodies over 4.5 MB (FUNCTION_PAYLOAD_TOO_LARGE),
+// which a phone photo + recording easily exceeds. The server only signs the
+// upload and later receives the resulting URLs.
+export function signUpload(): UploadSignature {
+  const timestamp = Math.round(Date.now() / 1000);
+  const folder = UPLOAD_FOLDER;
+  const signature = cloudinary.utils.api_sign_request(
+    { timestamp, folder },
+    process.env.CLOUDINARY_API_SECRET!
+  );
+  return {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME!,
+    apiKey: process.env.CLOUDINARY_API_KEY!,
+    timestamp,
+    folder,
+    signature,
+  };
+}
+
+// Guards createCard against arbitrary URLs: only accept media that lives in
+// this app's folder on this app's Cloudinary account.
+export function isOwnUpload(url: string, publicId: string) {
+  const prefix = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/`;
+  return url.startsWith(prefix) && publicId.startsWith(`${UPLOAD_FOLDER}/`) && url.includes(publicId);
 }
 
 export async function deleteFromCloudinary(publicId: string, kind: "image" | "audio") {

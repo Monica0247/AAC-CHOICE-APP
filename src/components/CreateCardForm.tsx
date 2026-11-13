@@ -1,15 +1,72 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { createCard, type CardActionState } from "@/lib/actions/cards";
+import { createCard, getCardUploadSignature, type CardActionState } from "@/lib/actions/cards";
+import type { UploadSignature } from "@/lib/cloudinary";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ImageField } from "@/components/ImageField";
 import { AudioField } from "@/components/AudioField";
 
 const initialState: CardActionState = undefined;
 
+async function uploadDirect(file: File, kind: "image" | "audio", sig: UploadSignature) {
+  const body = new FormData();
+  body.append("file", file);
+  body.append("api_key", sig.apiKey);
+  body.append("timestamp", String(sig.timestamp));
+  body.append("folder", sig.folder);
+  body.append("signature", sig.signature);
+  // Cloudinary serves audio through its video pipeline.
+  const resourceType = kind === "audio" ? "video" : "image";
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${sig.cloudName}/${resourceType}/upload`,
+    { method: "POST", body }
+  );
+  if (!res.ok) throw new Error(`Cloudinary ${kind} upload failed: ${res.status} ${await res.text()}`);
+  const json = (await res.json()) as { secure_url: string; public_id: string };
+  return { url: json.secure_url, publicId: json.public_id };
+}
+
+// Runs in the browser: uploads the files straight to Cloudinary, then calls
+// the server action with only the resulting URLs (Vercel caps function
+// request bodies at 4.5 MB, so the files can't go through the server).
+async function submitCard(prevState: CardActionState, formData: FormData): Promise<CardActionState> {
+  const groupId = formData.get("groupId")?.toString() ?? "";
+  const imageFile = formData.get("image");
+  const audioFile = formData.get("audio");
+
+  if (!(imageFile instanceof File) || imageFile.size === 0) return { error: "A photo is required." };
+  if (!(audioFile instanceof File) || audioFile.size === 0) {
+    return { error: "An audio recording or upload is required." };
+  }
+
+  const sig = await getCardUploadSignature(groupId);
+  if (!sig) return { error: "Not authorized." };
+
+  let image: { url: string; publicId: string };
+  let audio: { url: string; publicId: string };
+  try {
+    [image, audio] = await Promise.all([
+      uploadDirect(imageFile, "image", sig),
+      uploadDirect(audioFile, "audio", sig),
+    ]);
+  } catch (error) {
+    console.error(error);
+    return { error: "Upload failed. Check your internet connection and try again." };
+  }
+
+  const payload = new FormData();
+  payload.set("groupId", groupId);
+  payload.set("label", formData.get("label")?.toString() ?? "");
+  payload.set("imageUrl", image.url);
+  payload.set("imagePublicId", image.publicId);
+  payload.set("audioUrl", audio.url);
+  payload.set("audioPublicId", audio.publicId);
+  return createCard(prevState, payload);
+}
+
 export function CreateCardForm({ groupId }: { groupId: string }) {
-  const [state, formAction] = useActionState(createCard, initialState);
+  const [state, formAction] = useActionState(submitCard, initialState);
   const [resetCount, setResetCount] = useState(0);
 
   // Remount the (uncontrolled) fields below whenever a new successful
